@@ -1,5 +1,8 @@
 from flask import Flask,render_template,request
-import os
+import torch
+from NetModel import Net
+from PIL import Image
+import torchvision.transforms as transforms
 
 
 app = Flask(__name__)
@@ -11,22 +14,48 @@ def index():
 
 @app.route('/relic',methods=["POST","GET"])
 def relic():
-    if 'image' in request.files:
-        image_file = request.files['image']
+    image_file = request.files['image']
 
-        upload_folder = '/uploaded_images'
+    # 加载模型结构
+    net = Net()
 
-        # 创建保存文件的文件夹（如果不存在的话）
-        if not os.path.exists(upload_folder):
-            os.makedirs(upload_folder)
+    # 加载模型参数
+    pthfile = 'model_best.pth'
+    net.load_state_dict(torch.load(pthfile, map_location=torch.device('cpu')))  # 如果在 CPU 上运行的话需要指定 map_location=torch.device('cpu')
+    net.eval()
 
-        # 将文件保存到指定路径
-        image_file.save(os.path.join(upload_folder, 'uploaded_image.png'))
+    # 读取待处理的图片
+    input_image = Image.open(image_file).convert('RGB')
 
-        return 'Image successfully uploaded'
+    # 定义预处理的操作
+    preprocess = transforms.Compose([
+        transforms.Resize((256, 256)),  # 调整输入大小
+        transforms.ToTensor(),
+    ])
 
+    # 对图片进行预处理
+    input_tensor = preprocess(input_image)
+    input_batch = input_tensor.unsqueeze(0)  # 添加 batch 维度
 
+    # 使用模型进行预测
+    with torch.no_grad():
+        output = net(input_batch)
 
+    # 定义后处理的操作
+    postprocess = transforms.Compose([
+        # 需要的后处理操作，比如将张量转换为图片
+        transforms.ToPILImage()
+    ])
+
+    # 对预测结果进行后处理
+    output_image = output[0]
+    output_image = postprocess(output_image)
+
+    # 保存预测结果
+    output_image_path = 'static/output.png'
+    output_image.save(output_image_path)
+
+    return '<img src="input.png" /><img src="/static/output.png" />'
 
 if __name__ == '__main__':
     app.run(port=5000)
